@@ -2956,7 +2956,161 @@ def refsig_from_delsys(filepath, refsig_sensor_name="Trigno Load Cell"):
 
     return emg_refsig
 
+def emg_from_rec(
+    filepath,
+    fsamp=2048,
+    ied=10,
+    n_chs=32,
+    dtype='uint16',
+    adc_res=16,
+    din=2.4,
+    gain=192,
+):
+    """
+    Import the .sig file exportable from ReC/MEACs systems.
 
+    Parameters
+    ----------
+    filepath : str or Path
+        The directory and the name of the file to load
+        (including file extension .sig).
+        This can be a simple string, the use of Path is not necessary.
+    fsamp : int, default 2048
+        Sampling frequency in Hz.
+    ied : float, default 10
+        Inter-electrode distance in mm.
+    n_chs : int, default 32
+        Number of EMG channels stored in the file.
+    dtype : str, default 'uint16'
+        Data type used to encode each sample in the binary file. The ADC
+        codes are unsigned, offset-binary.
+    adc_res : int, default 16
+        ADC resolution, in bit.
+    din : float, default 2.4
+        ADC dynamic range, in V.
+    gain : float, default 192
+        Front-end gain, in V/V.
+
+    Returns
+    -------
+    emgfile : dict
+        A dictionary containing all the useful variables. RAW_SIGNAL is
+        expressed in microvolts (µV), centered on 0. Since .sig files
+        contain no decomposition, ACCURACY, IPTS, MUPULSES and
+        BINARY_MUS_FIRING are returned empty and NUMBER_OF_MUS is 0.
+
+    See also
+    --------
+    - askopenfile : Select and open files with a GUI.
+
+    Raises
+    ------
+    ValueError
+        If ``n_chs`` is not a positive integer, or if the file is too short
+        to contain even a single full sample across all channels.
+
+    Notes
+    -----
+    The returned file is called ``emgfile`` for convention.
+
+    The .sig file is expected to contain interleaved, unsigned ADC codes,
+    i.e. for each time point, one value per channel in sequence
+    (sample0_ch0, sample0_ch1, ..., sample0_ch(n-1), sample1_ch0, ...).
+
+    The ADC encodes the signal as an unsigned integer, with the
+    zero-signal reference at half full-scale. Codes are converted to
+    microvolts as:
+
+        centered = adc_code - 2**(adc_res - 1)
+        RAW_SIGNAL = (centered / (2**adc_res - 1)) * din / gain * 1e6
+
+    RAW_SIGNAL is returned with no filtering applied beyond the ADC
+    offset correction above (which is part of decoding the file format,
+    not signal processing). Use ``filter_rawemg`` to band-pass filter the
+    signal before decomposition or analysis.
+
+    Structure of the emgfile:
+
+        emgfile = {
+            "SOURCE": SOURCE,
+            "FILENAME": FILENAME,
+            "RAW_SIGNAL": RAW_SIGNAL,
+            "REF_SIGNAL": REF_SIGNAL,
+            "ACCURACY": ACCURACY,
+            "IPTS": IPTS,
+            "MUPULSES": MUPULSES,
+            "FSAMP": FSAMP,
+            "IED": IED,
+            "EMG_LENGTH": EMG_LENGTH,
+            "NUMBER_OF_MUS": NUMBER_OF_MUS,
+            "BINARY_MUS_FIRING": BINARY_MUS_FIRING,
+            "EXTRAS": EXTRAS,
+        }
+
+    Examples
+    --------
+    >>> import openhdemg.library as emg
+    >>> emgfile = emg.emg_from_rec(filepath="path/filename.sig")
+    >>> info = emg.info()
+    >>> info.data(emgfile)
+    """
+
+    if n_chs <= 0:
+        raise ValueError(f"\nn_chs must be a positive integer, got {n_chs}\n")
+
+    SOURCE = "REC"
+    FILENAME = os.path.basename(filepath)
+
+    np_dtype = np.dtype(dtype)
+    bytes_per_sample = np_dtype.itemsize
+
+    # Raises FileNotFoundError on its own if filepath does not exist.
+    file_size = os.path.getsize(filepath)
+    total_samples = file_size // bytes_per_sample
+    EMG_LENGTH = total_samples // n_chs
+
+    if EMG_LENGTH <= 0:
+        raise ValueError(
+            f"\nFile {FILENAME} is too short to contain a full sample "
+            f"across {n_chs} channels\n"
+        )
+
+    if total_samples % n_chs != 0:
+        warnings.warn(
+            f"\nFile size is not an exact multiple of {n_chs} channels. "
+            "Truncating excess samples.\n"
+        )
+
+    # Read the raw, unsigned ADC codes
+    raw = np.fromfile(filepath, dtype=np_dtype, count=EMG_LENGTH * n_chs)
+    raw = raw.reshape((EMG_LENGTH, n_chs)).astype(np.float64)
+
+    # Convert ADC codes to microvolts: remove the ADC's fixed zero-signal
+    # offset (half full-scale), then scale by the known dynamic range and
+    # front-end gain.
+    zero_ref = 2 ** (adc_res - 1)
+    max_lev = 2 ** adc_res - 1
+    raw = ((raw - zero_ref) / max_lev) * din / gain * 1e6
+
+    RAW_SIGNAL = pd.DataFrame(raw, columns=[*range(n_chs)])
+
+    emgfile = {
+        "SOURCE": SOURCE,
+        "FILENAME": FILENAME,
+        "RAW_SIGNAL": RAW_SIGNAL,
+        "REF_SIGNAL": pd.DataFrame(columns=[0]),
+        "ACCURACY": pd.DataFrame(columns=[0]),
+        "IPTS": pd.DataFrame(columns=[0]),
+        "MUPULSES": [],
+        "FSAMP": float(fsamp),
+        "IED": float(ied),
+        "EMG_LENGTH": EMG_LENGTH,
+        "NUMBER_OF_MUS": 0,
+        "BINARY_MUS_FIRING": pd.DataFrame(columns=[0]),
+        "EXTRAS": pd.DataFrame(columns=[0]),
+    }
+
+    return emgfile
 # ---------------------------------------------------------------------
 # Function to load custom CSV documents.
 def emg_from_customcsv(
