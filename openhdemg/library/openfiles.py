@@ -3039,6 +3039,7 @@ def emg_from_rec_meacs(filepath):
     n_chs=32
     dtype='uint16'
     adc_res=16
+    ied=10
     din=2.4
     gain=192
 
@@ -3119,7 +3120,7 @@ def emg_from_rec_meacs(filepath):
         "IPTS": pd.DataFrame(columns=[0]),
         "MUPULSES": [],
         "FSAMP": float(fsamp),
-        "IED": [],
+        "IED":float(ied),
         "EMG_LENGTH": EMG_LENGTH,
         "NUMBER_OF_MUS": 0,
         "BINARY_MUS_FIRING": pd.DataFrame(columns=[0]),
@@ -3207,6 +3208,7 @@ def emg_from_rec_bam(filepath):
     n_chs=64
     dtype='uint16'
     adc_res=16
+    ied=10
     din=3.3
     gain=1
 
@@ -3256,7 +3258,7 @@ def emg_from_rec_bam(filepath):
         "IPTS": pd.DataFrame(columns=[0]),
         "MUPULSES": [],
         "FSAMP": float(fsamp),
-        "IED": [],
+        "IED": float(ied),
         "EMG_LENGTH": EMG_LENGTH,
         "NUMBER_OF_MUS": 0,
         "BINARY_MUS_FIRING": pd.DataFrame(columns=[0]),
