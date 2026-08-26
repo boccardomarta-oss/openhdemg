@@ -2955,10 +2955,10 @@ def refsig_from_delsys(filepath, refsig_sensor_name="Trigno Load Cell"):
     }
 
     return emg_refsig
-
+#----------------------------------------------------------------------
 def emg_from_rec_meacs(filepath):
     """
-    Import the .sig file exportable from ReC/MEACs systems.
+    Import the .sig file exportable from ReC/MEACS systems.
 
     Parameters
     ----------
@@ -2982,8 +2982,8 @@ def emg_from_rec_meacs(filepath):
     Raises
     ------
     ValueError
-        If ``n_chs`` is not a positive integer, or if the file is too short
-        to contain even a single full sample across all channels.
+        If the file is too short to contain even a single full sample
+        across all channels.
 
     Notes
     -----
@@ -3036,7 +3036,6 @@ def emg_from_rec_meacs(filepath):
     >>> info.data(emgfile)
     """
     fsamp=2048
-    ied=10
     n_chs=32
     dtype='uint16'
     adc_res=16
@@ -3120,7 +3119,144 @@ def emg_from_rec_meacs(filepath):
         "IPTS": pd.DataFrame(columns=[0]),
         "MUPULSES": [],
         "FSAMP": float(fsamp),
-        "IED": float(ied),
+        "IED": [],
+        "EMG_LENGTH": EMG_LENGTH,
+        "NUMBER_OF_MUS": 0,
+        "BINARY_MUS_FIRING": pd.DataFrame(columns=[0]),
+        "EXTRAS": pd.DataFrame(columns=[0]),
+    }
+
+    return emgfile
+# ---------------------------------------------------------------------
+def emg_from_rec_bam(filepath):
+    """
+    Import the .sig file exportable from ReC/BAM systems.
+
+    Parameters
+    ----------
+    filepath : str or Path
+        The directory and the name of the file to load
+        (including file extension .sig).
+        This can be a simple string, the use of Path is not necessary.
+    
+    Returns
+    -------
+    emgfile : dict
+        A dictionary containing all the useful variables. RAW_SIGNAL is
+        expressed in microvolts (µV), centered on 0. Since .sig files
+        contain no decomposition, ACCURACY, IPTS, MUPULSES and
+        BINARY_MUS_FIRING are returned empty and NUMBER_OF_MUS is 0.
+
+    See also
+    --------
+    - askopenfile : Select and open files with a GUI.
+
+    Raises
+    ------
+    ValueError
+        if the file is too short to contain even a single full sample 
+        across all channels.
+
+    Notes
+    -----
+    The returned file is called ``emgfile`` for convention.
+
+    The .sig file is expected to contain interleaved, unsigned ADC codes,
+    i.e. for each time point, one value per channel in sequence
+    (sample0_ch0, sample0_ch1, ..., sample0_ch(n-1), sample1_ch0, ...).
+
+    The ADC encodes the signal as an unsigned integer, with the
+    zero-signal reference at half full-scale. Codes are converted to
+    microvolts as:
+
+        centered = adc_code - 2**(adc_res - 1)
+        RAW_SIGNAL = (centered / (2**adc_res - 1)) * din / gain * 1e6
+
+    RAW_SIGNAL is returned with no filtering applied beyond the ADC
+    offset correction above (which is part of decoding the file format,
+    not signal processing). Use ``filter_rawemg`` to band-pass filter the
+    signal before decomposition or analysis.
+
+
+    Structure of the emgfile:
+
+        emgfile = {
+            "SOURCE": SOURCE,
+            "FILENAME": FILENAME,
+            "RAW_SIGNAL": RAW_SIGNAL,
+            "REF_SIGNAL": REF_SIGNAL,
+            "ACCURACY": ACCURACY,
+            "IPTS": IPTS,
+            "MUPULSES": MUPULSES,
+            "FSAMP": FSAMP,
+            "IED": IED,
+            "EMG_LENGTH": EMG_LENGTH,
+            "NUMBER_OF_MUS": NUMBER_OF_MUS,
+            "BINARY_MUS_FIRING": BINARY_MUS_FIRING,
+            "EXTRAS": EXTRAS,
+        }
+
+    Examples
+    --------
+    >>> import openhdemg.library as emg
+    >>> emgfile = emg.emg_from_rec_bam(filepath="path/filename.sig")
+    >>> info = emg.info()
+    >>> info.data(emgfile)
+    """
+    fsamp=2048
+    n_chs=64
+    dtype='uint16'
+    adc_res=16
+    din=3.3
+    gain=1
+
+    SOURCE = "REC"
+    filepath = Path(filepath)
+    FILENAME = filepath.name
+
+    np_dtype = np.dtype(dtype)
+    bytes_per_sample = np_dtype.itemsize
+
+    # Raises FileNotFoundError on its own if filepath does not exist.
+    file_size = os.path.getsize(filepath)
+    total_samples = file_size // bytes_per_sample
+    EMG_LENGTH = total_samples // n_chs
+
+    if EMG_LENGTH <= 0:
+        raise ValueError(
+            f"\nFile {FILENAME} is too short to contain a full sample "
+            f"across {n_chs} channels\n"
+        )
+
+    if total_samples % n_chs != 0:
+        warnings.warn(
+            f"\nFile size is not an exact multiple of {n_chs} channels. "
+            "Truncating excess samples.\n"
+        )
+
+    # Read the raw, unsigned ADC codes
+    raw = np.fromfile(filepath, dtype=np_dtype, count=EMG_LENGTH * n_chs)
+    raw = raw.reshape((EMG_LENGTH, n_chs)).astype(np.float64)
+
+    # Convert ADC codes to microvolts: remove the ADC's fixed zero-signal
+    # offset (half full-scale), then scale by the known dynamic range and
+    # front-end gain.
+    zero_ref = 2 ** (adc_res - 1)
+    max_lev = 2 ** adc_res - 1
+    raw = ((raw - zero_ref) / max_lev) * din / gain * 1e6
+
+    RAW_SIGNAL = pd.DataFrame(raw, columns=[*range(n_chs)])
+
+    emgfile = {
+        "SOURCE": SOURCE,
+        "FILENAME": FILENAME,
+        "RAW_SIGNAL": RAW_SIGNAL,
+        "REF_SIGNAL": pd.DataFrame(columns=[0]),
+        "ACCURACY": pd.DataFrame(columns=[0]),
+        "IPTS": pd.DataFrame(columns=[0]),
+        "MUPULSES": [],
+        "FSAMP": float(fsamp),
+        "IED": [],
         "EMG_LENGTH": EMG_LENGTH,
         "NUMBER_OF_MUS": 0,
         "BINARY_MUS_FIRING": pd.DataFrame(columns=[0]),
@@ -3850,7 +3986,7 @@ def askopenfile(filesource="OPENHDEMG", **kwargs):
 
     Parameters
     ----------
-    filesource : str {"OPENHDEMG", "DEMUSE", "OTB", "DELSYS", "REC_MEACS", "CUSTOMCSV", "OTB_REFSIG", "DELSYS_REFSIG", "CUSTOMCSV_REFSIG"}, default "OPENHDEMG"
+    filesource : str {"OPENHDEMG", "DEMUSE", "OTB", "DELSYS", "REC_MEACS", "REC_BAM","CUSTOMCSV", "OTB_REFSIG", "DELSYS_REFSIG", "CUSTOMCSV_REFSIG"}, default "OPENHDEMG"
         The source of the file. See notes for how files should be exported
         from other softwares or platforms.
 
@@ -3869,7 +4005,11 @@ def askopenfile(filesource="OPENHDEMG", **kwargs):
             decomposition and EMG signal (.mat + .txt).
 
         ``REC_MEACS``
-            File exported from ReC/MEACs systems (.sig), raw EMG signal
+            File exported from ReC/MEACS systems (.sig), raw EMG signal
+            only, no decomposition.
+
+        ``REC_BAM``
+            File exported from ReC/BAM systems (.sig), raw EMG signal
             only, no decomposition.
 
         ``CUSTOMCSV``
@@ -3936,6 +4076,9 @@ def askopenfile(filesource="OPENHDEMG", **kwargs):
     rec_meacs_files: the .sig file contains the raw EMG signal only, with no
         decomposition. See the documentation of the function
         emg_from_rec_meacs for additional informations.
+    rec_bam_files: the .sig file contains the raw EMG signal only, with no
+        decomposition. See the documentation of the function
+        emg_from_rec_bam for additional informations.
     custom_ref_signal : str, default 'REF_SIGNAL'
         Label of the column(s) containing the reference signal of the custom
         file.
@@ -4094,8 +4237,14 @@ def askopenfile(filesource="OPENHDEMG", **kwargs):
         file_toOpen = run_custom_file_dialog(
             mode="open",
             filesource=filesource,
-            filetypes=[("ReC/MEACs files", "*.sig")],
-        )    
+            filetypes=[("ReC/MEACS files", "*.sig")],
+        )  
+    elif filesource == "REC_BAM":
+        file_toOpen = run_custom_file_dialog(
+            mode="open",
+            filesource=filesource,
+            filetypes=[("ReC/BAM files", "*.sig")],
+        )  
     elif filesource == "OPENHDEMG":
         file_toOpen = run_custom_file_dialog(
             mode="open",
@@ -4112,7 +4261,7 @@ def askopenfile(filesource="OPENHDEMG", **kwargs):
         raise ValueError(
             "\nfilesource not valid, it must be one of " +
             "'DEMUSE', 'OTB', 'DELSYS', 'OTB_REFSIG', 'DELSYS_REFSIG', " +
-            "'OPENHDEMG', 'CUSTOMCSV', 'CUSTOMCSV_REFSIG','REC_MEACS'\n"
+            "'OPENHDEMG', 'CUSTOMCSV', 'CUSTOMCSV_REFSIG','REC_MEACS', 'REC_BAM'\n"
         )
 
     # Check if a file has been selected. If not, return None
@@ -4167,6 +4316,10 @@ def askopenfile(filesource="OPENHDEMG", **kwargs):
         )
     elif filesource == "REC_MEACS":
         emgfile = emg_from_rec_meacs(
+            filepath=file_toOpen
+        )
+    elif filesource == "REC_BAM":
+        emgfile = emg_from_rec_bam(
             filepath=file_toOpen
         )
     elif filesource == "OPENHDEMG":
