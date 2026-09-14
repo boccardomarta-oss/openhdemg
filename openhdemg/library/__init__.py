@@ -7,8 +7,6 @@ from openhdemg.library.openfiles import (
     emg_from_otb,
     emg_from_demuse,
     emg_from_delsys,
-    emg_from_rec_meacs,
-    emg_from_rec_bam,
     emg_from_customcsv,
     refsig_from_otb,
     refsig_from_delsys,
