@@ -1,7 +1,7 @@
 """
-Temporary interface for selecting a ReC/MEACs or ReC/BAM *_EMG_raw.sig
-file (plus an optional GAM auxiliary file) and loading it with
-the correct system-specific loader.
+Temporary interface for selecting a ReC/MEACs or ReC/BAM *_EMG_raw.sig or
+*_SIG_raw.sig file (plus an optional GAM auxiliary file) and loading it
+with the correct system-specific loader.
 
 This is a convenience wrapper around emg_from_rec(): it only adds the
 file-selection dialogs (and, if a GAM file is picked, a small text-input
@@ -119,11 +119,12 @@ def _ask_ied(default=10.0):
 
 def select_and_load_rec_file(gam_channels=None, ied=None):
     """
-    Select a *_EMG_raw.sig file (and optionally a GAM file) with
-    file dialogs, then load them.
+    Select a *_EMG_raw.sig or *_SIG_raw.sig file (and optionally a GAM
+    file) with file dialogs, then load them.
 
-    A first dialog selects the *_EMG_raw.sig file. If ied was not already
-    provided, a second dialog then asks for the interelectrode distance
+    A first dialog selects the *_EMG_raw.sig or *_SIG_raw.sig file. If
+    ied was not already provided, a second dialog then asks for the
+    interelectrode distance
     (IED), pre-filled with the default (10 mm), so accepting it as-is
     just keeps the default. A third dialog is then shown to optionally
     select a GAM auxiliary file, which can be located in a
@@ -169,7 +170,10 @@ def select_and_load_rec_file(gam_channels=None, ied=None):
         mode="open",
         filesource="EMG REC",
         filetypes=[
-            ("ReC/MEACS and ReC/BAM EMG files", "*_EMG_raw.sig"),
+            (
+                "ReC/MEACS and ReC/BAM EMG files",
+                "*_EMG_raw.sig *_SIG_raw.sig",
+            ),
             ("All files", "*.*"),
         ],
     )
